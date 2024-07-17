@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Card,
   Select,
@@ -9,22 +9,65 @@ import {
 } from "@material-tailwind/react";
 import { useSelector } from "react-redux";
 import axios from "axios";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-import { addRecordsBook, uploadRecordsBook } from "./API_Routes";
+import {
+  addRecordsBook,
+  getRecordBookByID,
+  updateRecordsBook,
+  uploadRecordsBook,
+} from "./API_Routes";
 
 export default function BookPublication() {
   const { currentUser } = useSelector((state) => state.user);
   const [uploadedFilePaths, setUploadedFilePaths] = useState({});
+  const location = useLocation();
+  const [tableName, setTableName] = useState("");
+  const [id, setId] = useState(null);
+
+  // console.log('cuurentuser: ',currentUser);
+
+ const fetchRecord = async (tableName, table_id) => {
+  try {
+    console.log("t id: ", table_id);
+    console.log("id: ", id);
+    if (table_id !== null) {
+      const recordBookURL = getRecordBookByID(
+        table_id,
+        currentUser?.Username
+      );
+      const response = await axios.get(recordBookURL);
+      console.log("record response: ", response.data.data[0]);
+      setFormData(response.data.data[0]);
+    }
+  } catch (error) {
+    console.log(error);
+  }
+};
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tableNames = params.get("tableName");
+    const table_id = params.get("id");
+
+    if (tableNames) {
+      setTableName(tableNames);
+    }
+
+    if (table_id !== null) {
+      setId(table_id);
+      fetchRecord(tableNames, table_id);
+    }
+  }, [location]);
 
   const navigate = useNavigate();
 
   const [formData, setFormData] = useState({
     T_ID: null,
-    Name: currentUser?.Name,
-    Username: currentUser?.Username,
+    Name: currentUser?.Name || "",
+    Username: currentUser?.Username || "",
     Department: "",
     Book_Title: "",
     Chapter_if_any: "",
@@ -57,12 +100,11 @@ export default function BookPublication() {
         columnNames.push("Upload_Paper");
       }
 
-
       // Append column names to the query parameters
       queryParams.append("columnNames", columnNames.join(","));
-      console.log('query: ', queryParams);
+      console.log("query: ", queryParams);
       const url = `${uploadRecordsBook}?${queryParams.toString()}`;
-      console.log("formdata", formDataForUpload)
+      console.log("formdata", formDataForUpload);
       const response = await axios.post(url, formDataForUpload, {
         headers: {
           "Content-Type": "multipart/form-data",
@@ -87,7 +129,6 @@ export default function BookPublication() {
       // Handle error as needed
     }
   };
-
 
   const handleOnChange = (e) => {
     const { id, value, type, files } = e.target;
@@ -117,7 +158,7 @@ export default function BookPublication() {
       return;
     }
     try {
-      const filesToUpload = [];
+      const filesToUpload = []; 
 
       if (formData.Upload_Paper !== null) {
         filesToUpload.push(formData.Upload_Paper);
@@ -176,6 +217,87 @@ export default function BookPublication() {
     }
   };
 
+  //Update Record
+  const handleUpdate = async (e) => {
+    e.preventDefault();
+
+    console.log("update data:", formData);
+    if (formData.Upload_Paper === null) {
+      toast.error("Select a file for upload.", {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "light",
+      });
+      return;
+    }
+    try {
+      const filesToUpload = [];
+
+      if (formData.Upload_Paper !== null) {
+        filesToUpload.push(formData.Upload_Paper);
+      }
+
+      // If file upload is successful, continue with the form submission
+      const uploadResults = await handleFileUpload(filesToUpload);
+
+      // Store the paths of uploaded files in the uploadedFilePaths object
+      const updatedUploadedFilePaths = { ...uploadedFilePaths };
+      uploadResults.forEach((result) => {
+        updatedUploadedFilePaths[result.columnName] = result.filePath;
+      });
+      setUploadedFilePaths(updatedUploadedFilePaths);
+
+      // Merge uploaded file paths with existing formData
+      const formDataWithFilePath = {
+        ...formData,
+        ...updatedUploadedFilePaths,
+      };
+      console.log("Final data with file paths:", formDataWithFilePath);
+
+      // Send a POST request to the addRecordsBook API endpoint
+      await axios.put(
+        `${updateRecordsBook}?username=${currentUser?.Username}&T_ID=${id}`,
+        formDataWithFilePath
+      );
+
+      // Display a success toast
+      toast.success("Record updated Successfully", {
+        position: "top-right",
+        autoClose: 1500,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "light",
+      });
+
+      // Navigate to "/t/data" after successful submission
+      navigate("/t/data");
+    } catch (error) {
+      // Handle file upload error
+      console.error("File upload error:", error);
+
+      // Display an error toast
+      toast.error(error?.response?.data?.message, {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "light",
+      });
+      return;
+    }
+  };
+
   return (
     <>
       <Card
@@ -191,7 +313,7 @@ export default function BookPublication() {
           Book Publication
         </Typography>
 
-        <form className="mt-8 mb-2" onSubmit={handleSubmit}>
+        <form className="mt-8 mb-2" onSubmit={id ? handleUpdate : handleSubmit}>
           <div className="mb-4 flex flex-wrap -mx-4">
             <div className="w-full px-4 mb-4">
               <Typography variant="h6" color="blue-gray" className="mb-3">
@@ -207,7 +329,7 @@ export default function BookPublication() {
                     target: { id: "Department", value },
                   })
                 }
-              // onChange={handleOnChange}
+                // onChange={handleOnChange}
               >
                 <Option value="CS">CS</Option>
                 <Option value="IT">IT</Option>
@@ -259,7 +381,7 @@ export default function BookPublication() {
                     target: { id: "Level_International_National", value },
                   })
                 }
-              // onChange={handleOnChange}
+                // onChange={handleOnChange}
               >
                 <Option value="International">International</Option>
                 <Option value="National">National</Option>
@@ -295,7 +417,7 @@ export default function BookPublication() {
                     target: { id: "Year", value },
                   })
                 }
-              // onChange={handleOnChange}
+                // onChange={handleOnChange}
               >
                 {years.map((year) => (
                   <Option key={year} value={year}>
@@ -332,10 +454,15 @@ export default function BookPublication() {
               />
             </div>
           </div>
-
-          <Button type="submit" className="mt-4" fullWidth>
-            Submit
-          </Button>
+          {id ? (
+            <Button type="submit" className="mt-4" fullWidth>
+              Update
+            </Button>
+          ) : (
+            <Button type="submit" className="mt-4" fullWidth>
+              Submit
+            </Button>
+          )}
         </form>
       </Card>
     </>
